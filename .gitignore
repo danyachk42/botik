@@ -1,0 +1,11 @@
+# Секреты
+.env
+
+# БД/бэкапы
+spy_bot*.db
+backups/
+spy_bot.log
+bot.log
+monitor_bot.log
+monitor_output/
+
