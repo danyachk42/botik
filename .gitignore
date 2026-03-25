@@ -9,3 +9,9 @@ bot.log
 monitor_bot.log
 monitor_output/
 
+# Python cache
+__pycache__/
+
+# Архив не нужен для Git
+bot_webhook_replit.zip
+

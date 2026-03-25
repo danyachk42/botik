@@ -125,6 +125,93 @@ THEMES = {
     }
 }
 
+# ==================== МУЛЬТИЯЗЫЧНОСТЬ ====================
+SUPPORTED_LANGUAGES = {'ru': '🇷🇺 Русский', 'en': '🇬🇧 English', 'uk': '🇺🇦 Українська'}
+DEFAULT_LANGUAGE = 'ru'
+
+TRANSLATIONS = {
+    'ru': {
+        # Конец игры
+        'spies_win_header':        '🕵️ ШПИОНЫ ПОБЕДИЛИ',
+        'civs_win_header':         '🏆 МИРНЫЕ ПОБЕДИЛИ',
+        'spies_win_reason_guess':  'Шпион угадал локацию',
+        'spies_win_reason_num':    'Мирные не смогли разоблачить шпионов',
+        'civs_win_reason':         'Все шпионы были разоблачены',
+        'location_label':          '📍 Локация',
+        'duration_label':          '⏱ Время игры',
+        'spies_label':             '🕵️ Шпион',
+        'spies_label_plural':      '🕵️ Шпионы',
+        'civs_label':              '👥 Мирные',
+        'eliminated_label':        'выбыли',
+        'guessed_label':           '🎯 Угадал локацию',
+        'duration_min':            'мин.',
+        'duration_less':           'меньше минуты',
+        # Голосование
+        'voting_result_header':    '🗳 Результаты голосования',
+        'voting_most_votes':       'Больше всего голосов получил',
+        'role_spy':                '🕵️ Шпион',
+        'role_civilian':           '👥 Мирный житель',
+        # Язык
+        'lang_choose':             '🌍 Выберите язык интерфейса:',
+        'lang_set':                '✅ Язык изменён на Русский 🇷🇺',
+        'lang_only_group':         '❌ Эта команда доступна только в группах.',
+        'lang_no_rights':          '❌ Только администраторы группы могут менять язык.',
+    },
+    'en': {
+        'spies_win_header':        '🕵️ SPIES WIN',
+        'civs_win_header':         '🏆 CIVILIANS WIN',
+        'spies_win_reason_guess':  'The spy guessed the location',
+        'spies_win_reason_num':    'Civilians failed to expose the spies',
+        'civs_win_reason':         'All spies have been exposed',
+        'location_label':          '📍 Location',
+        'duration_label':          '⏱ Game duration',
+        'spies_label':             '🕵️ Spy',
+        'spies_label_plural':      '🕵️ Spies',
+        'civs_label':              '👥 Civilians',
+        'eliminated_label':        'eliminated',
+        'guessed_label':           '🎯 Guessed the location',
+        'duration_min':            'min.',
+        'duration_less':           'less than a minute',
+        'voting_result_header':    '🗳 Voting results',
+        'voting_most_votes':       'Most votes received by',
+        'role_spy':                '🕵️ Spy',
+        'role_civilian':           '👥 Civilian',
+        'lang_choose':             '🌍 Choose the interface language:',
+        'lang_set':                '✅ Language changed to English 🇬🇧',
+        'lang_only_group':         '❌ This command is only available in groups.',
+        'lang_no_rights':          '❌ Only group admins can change the language.',
+    },
+    'uk': {
+        'spies_win_header':        '🕵️ ШПИГУНИ ПЕРЕМОГЛИ',
+        'civs_win_header':         '🏆 МИРНІ ПЕРЕМОГЛИ',
+        'spies_win_reason_guess':  'Шпигун вгадав локацію',
+        'spies_win_reason_num':    'Мирні не змогли викрити шпигунів',
+        'civs_win_reason':         'Усіх шпигунів було викрито',
+        'location_label':          '📍 Локація',
+        'duration_label':          '⏱ Тривалість гри',
+        'spies_label':             '🕵️ Шпигун',
+        'spies_label_plural':      '🕵️ Шпигуни',
+        'civs_label':              '👥 Мирні',
+        'eliminated_label':        'вибули',
+        'guessed_label':           '🎯 Вгадав локацію',
+        'duration_min':            'хв.',
+        'duration_less':           'менше хвилини',
+        'voting_result_header':    '🗳 Результати голосування',
+        'voting_most_votes':       'Найбільше голосів отримав',
+        'role_spy':                '🕵️ Шпигун',
+        'role_civilian':           '👥 Мирний житель',
+        'lang_choose':             '🌍 Оберіть мову інтерфейсу:',
+        'lang_set':                '✅ Мову змінено на Українську 🇺🇦',
+        'lang_only_group':         '❌ Ця команда доступна лише у групах.',
+        'lang_no_rights':          '❌ Лише адміністратори групи можуть змінювати мову.',
+    },
+}
+
+def t(chat_id: int, key: str) -> str:
+    """Получить перевод строки для группы"""
+    lang = get_group_language(chat_id)
+    return TRANSLATIONS.get(lang, TRANSLATIONS[DEFAULT_LANGUAGE]).get(key, TRANSLATIONS[DEFAULT_LANGUAGE].get(key, key))
+
 # ==================== КОНСТАНТЫ ====================
 ROLE_CIVILIAN = 'civilian'
 ROLE_SPY = 'spy'
@@ -144,21 +231,32 @@ game_sessions = {}
 muted_users = defaultdict(lambda: {'until': None, 'count': 0})
 game_timers = {}
 active_games = {}
+skip_discussion_votes = {}  # game_id -> set(user_id) — те кто нажали "Закончить обсуждение"
+discussion_skipped = {}     # game_id -> bool, флаг что обсуждение уже скипнули
 lock = threading.RLock()
+db_write_lock = threading.Lock()  # Сериализация записей в SQLite
 
 # ==================== ФУНКЦИИ БД ====================
 def get_db_connection():
-    """Получение подключения к БД"""
-    try:
-        conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30.0)
-        conn.row_factory = sqlite3.Row
-        conn.execute('PRAGMA journal_mode=WAL')
-        conn.execute('PRAGMA synchronous=NORMAL')
-        conn.execute('PRAGMA cache_size=10000')
-        return conn
-    except sqlite3.Error as e:
-        logger.error(f"❌ Ошибка БД: {str(e)}")
-        raise
+    """Получение подключения к БД с retry при блокировке"""
+    last_err = None
+    for attempt in range(5):
+        try:
+            conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=60.0)
+            conn.row_factory = sqlite3.Row
+            conn.execute('PRAGMA journal_mode=WAL')
+            conn.execute('PRAGMA synchronous=NORMAL')
+            conn.execute('PRAGMA cache_size=10000')
+            conn.execute('PRAGMA busy_timeout=60000')  # 60 сек ожидания на уровне SQLite
+            return conn
+        except sqlite3.OperationalError as e:
+            last_err = e
+            if 'locked' in str(e).lower():
+                time.sleep(0.3 * (attempt + 1))
+                continue
+            raise
+    logger.error(f"❌ БД заблокирована после 5 попыток: {last_err}")
+    raise last_err
 
 def init_database():
     """Инициализация БД"""
@@ -281,6 +379,7 @@ def init_database():
             logger.warning(f"⚠️ В БД отсутствует колонка {table_name}.{column_name}. Добавляю...")
             cursor.execute(f'ALTER TABLE {table_name} ADD COLUMN {column_def_sql}')
 
+        ensure_column('groups', 'language', "language TEXT DEFAULT 'ru'")
         ensure_column('game_players', 'guessed_location', 'guessed_location BOOLEAN DEFAULT 0')
         ensure_column('game_players', 'alive', 'alive BOOLEAN DEFAULT 1')
         ensure_column('game_players', 'voted', 'voted BOOLEAN DEFAULT 0')
@@ -473,24 +572,25 @@ def check_bot_permissions(chat_id: int) -> bool:
         has_all = has_pin and has_delete and has_invite and has_restrict
 
         try:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            now = datetime.now().isoformat()
+            with db_write_lock:
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                now = datetime.now().isoformat()
 
-            cursor.execute('SELECT chat_id FROM groups WHERE chat_id = ?', (chat_id,))
-            exists = cursor.fetchone()
+                cursor.execute('SELECT chat_id FROM groups WHERE chat_id = ?', (chat_id,))
+                exists = cursor.fetchone()
 
-            if exists:
-                cursor.execute('''UPDATE groups SET bot_admin = ?, title = ?, username = ?, last_active = ? 
-                    WHERE chat_id = ?''', (has_all, chat.title[:100] if chat.title else None, 
-                    chat.username[:50] if chat.username else None, now, chat_id))
-            else:
-                cursor.execute('''INSERT INTO groups (chat_id, bot_admin, title, username, created_at, last_active) 
-                    VALUES (?, ?, ?, ?, ?, ?)''', (chat_id, has_all, chat.title[:100] if chat.title else None, 
-                    chat.username[:50] if chat.username else None, now, now))
+                if exists:
+                    cursor.execute('''UPDATE groups SET bot_admin = ?, title = ?, username = ?, last_active = ? 
+                        WHERE chat_id = ?''', (has_all, chat.title[:100] if chat.title else None, 
+                        chat.username[:50] if chat.username else None, now, chat_id))
+                else:
+                    cursor.execute('''INSERT INTO groups (chat_id, bot_admin, title, username, created_at, last_active) 
+                        VALUES (?, ?, ?, ?, ?, ?)''', (chat_id, has_all, chat.title[:100] if chat.title else None, 
+                        chat.username[:50] if chat.username else None, now, now))
 
-            conn.commit()
-            conn.close()
+                conn.commit()
+                conn.close()
         except Exception as e:
             logger.warning(f"⚠️ Ошибка обновления информации о группе: {str(e)}")
 
@@ -514,26 +614,27 @@ def format_time(minutes: int) -> str:
 def add_user(user: User) -> bool:
     """Добавление пользователя в БД"""
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        now = datetime.now().isoformat()
+        with db_write_lock:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            now = datetime.now().isoformat()
 
-        cursor.execute('SELECT user_id FROM users WHERE user_id = ?', (user.id,))
-        exists = cursor.fetchone()
+            cursor.execute('SELECT user_id FROM users WHERE user_id = ?', (user.id,))
+            exists = cursor.fetchone()
 
-        if exists:
-            cursor.execute('''UPDATE users SET username = ?, first_name = ?, last_name = ?, last_active = ? 
-                WHERE user_id = ?''', (user.username[:50] if user.username else None, 
-                user.first_name[:50] if user.first_name else None, 
-                user.last_name[:50] if user.last_name else None, now, user.id))
-        else:
-            cursor.execute('''INSERT INTO users (user_id, username, first_name, last_name, created_at, last_active) 
-                VALUES (?, ?, ?, ?, ?, ?)''', (user.id, user.username[:50] if user.username else None, 
-                user.first_name[:50] if user.first_name else None, 
-                user.last_name[:50] if user.last_name else None, now, now))
+            if exists:
+                cursor.execute('''UPDATE users SET username = ?, first_name = ?, last_name = ?, last_active = ? 
+                    WHERE user_id = ?''', (user.username[:50] if user.username else None, 
+                    user.first_name[:50] if user.first_name else None, 
+                    user.last_name[:50] if user.last_name else None, now, user.id))
+            else:
+                cursor.execute('''INSERT INTO users (user_id, username, first_name, last_name, created_at, last_active) 
+                    VALUES (?, ?, ?, ?, ?, ?)''', (user.id, user.username[:50] if user.username else None, 
+                    user.first_name[:50] if user.first_name else None, 
+                    user.last_name[:50] if user.last_name else None, now, now))
 
-        conn.commit()
-        conn.close()
+            conn.commit()
+            conn.close()
         return True
     except Exception as e:
         logger.error(f"❌ Ошибка добавления пользователя {user.id}: {str(e)}")
@@ -661,6 +762,41 @@ def get_group_theme(chat_id: int) -> str:
     except Exception as e:
         logger.error(f"❌ Ошибка получения темы: {str(e)}")
         return 'default'
+
+def get_group_language(chat_id: int) -> str:
+    """Получение языка группы"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT language FROM groups WHERE chat_id = ?', (chat_id,))
+        result = cursor.fetchone()
+        conn.close()
+        lang = result['language'] if result and result['language'] else DEFAULT_LANGUAGE
+        return lang if lang in SUPPORTED_LANGUAGES else DEFAULT_LANGUAGE
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения языка: {str(e)}")
+        return DEFAULT_LANGUAGE
+
+def set_group_language(chat_id: int, lang: str) -> bool:
+    """Установка языка для группы"""
+    try:
+        if lang not in SUPPORTED_LANGUAGES:
+            return False
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        now = datetime.now().isoformat()
+        cursor.execute('SELECT chat_id FROM groups WHERE chat_id = ?', (chat_id,))
+        if cursor.fetchone():
+            cursor.execute('UPDATE groups SET language = ?, last_active = ? WHERE chat_id = ?', (lang, now, chat_id))
+        else:
+            cursor.execute('INSERT INTO groups (chat_id, language, created_at, last_active) VALUES (?, ?, ?, ?)', (chat_id, lang, now, now))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        logger.error(f"❌ Ошибка установки языка: {str(e)}")
+        return False
+
 
 def is_user_spy(game_id: int, user_id: int) -> bool:
     """Проверка, является ли пользователь шпионом"""
@@ -812,6 +948,25 @@ def get_theme_keyboard() -> InlineKeyboardMarkup:
         ))
     return keyboard
 
+def get_player_display_name(user_id: int) -> str:
+    """Возвращает только имя/никнейм игрока без HTML-ссылки (для кнопок)"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT first_name, username FROM users WHERE user_id = ?', (user_id,))
+        result = cursor.fetchone()
+        conn.close()
+        if result:
+            name = result['first_name'] or result['username'] or f"User{user_id}"
+        else:
+            name = f"User{user_id}"
+        # Обрезаем длинные имена чтобы кнопка не была слишком широкой
+        return name[:32] if len(name) > 32 else name
+    except Exception as e:
+        logger.error(f"❌ Ошибка get_player_display_name: {str(e)}")
+        return f"User{user_id}"
+
+
 def get_voting_keyboard(game_id: int, exclude_user_id: int = None) -> InlineKeyboardMarkup:
     """Клавиатура голосования"""
     try:
@@ -828,7 +983,7 @@ def get_voting_keyboard(game_id: int, exclude_user_id: int = None) -> InlineKeyb
         keyboard = InlineKeyboardMarkup(row_width=2)
         for player_id in players:
             keyboard.add(InlineKeyboardButton(
-                get_user_profile_link(player_id),
+                get_player_display_name(player_id),
                 callback_data=f"vote_{game_id}_{player_id}"
             ))
 
@@ -880,6 +1035,41 @@ def get_spy_voting_keyboard(game_id: int) -> InlineKeyboardMarkup:
     return keyboard
 
 # ==================== КОМАНДЫ ====================
+
+def get_rules_text() -> str:
+    """Возвращает полный текст правил игры"""
+    return (
+        "🕵️‍♂️ <b>Кто шпион? — Правила игры</b>\n\n"
+
+        "<b>Суть игры</b>\n"
+        "Все игроки находятся в одной секретной локации — кроме шпиона. "
+        "Мирные жители знают место, шпион — нет. "
+        "Мирные должны вычислить шпиона, а шпион — угадать локацию и не раскрыться.\n\n"
+
+        "<b>Как играть в боте</b>\n"
+        "1. Добавь бота в группу и дай ему права администратора.\n"
+        "2. Напиши /spygo — бот создаст лобби.\n"
+        "3. Все желающие нажимают кнопку <b>«Присоединиться»</b>.\n"
+        "4. Создатель нажимает <b>«Начать»</b> — минимум 3 игрока.\n"
+        "5. Каждый получает личное сообщение: либо название локации, либо надпись <b>«Ты шпион»</b>.\n\n"
+
+        "<b>Фазы игры</b>\n"
+        "🗣 <b>Обсуждение</b> — игроки по очереди задают друг другу вопросы о локации. "
+        "Нельзя называть локацию прямо. Цель мирных — найти того, кто отвечает подозрительно. "
+        "Цель шпиона — отвечать правдоподобно и вычислить место.\n\n"
+        "🗳 <b>Голосование</b> — каждый голосует за того, кого считает шпионом. "
+        "Кто наберёт больше всего голосов — выбывает.\n\n"
+
+        "<b>Победа</b>\n"
+        "🏆 <b>Мирные побеждают</b>, если правильно голосуют за шпиона.\n"
+        "🕵️ <b>Шпион побеждает</b>, если его не вычислили, или если он правильно угадывает локацию.\n\n"
+
+        "<b>Советы</b>\n"
+        "• Задавай конкретные вопросы — «Ты здесь работаешь?», «Тут бывает очередь?»\n"
+        "• Не говори слишком много — шпион следит за каждым словом\n"
+        "• Шпион: слушай ответы других, они сами подскажут локацию\n"
+        "• Не голосуй наугад — шпион только рад панике среди мирных"
+    )
 
 @bot.message_handler(commands=['start'])
 def handle_start(message: Message):
@@ -1047,37 +1237,10 @@ def handle_help(message: Message):
 
 @bot.message_handler(commands=['rules', 'rule'])
 def handle_rules(message: Message):
-    """Команда /rules"""
+    """Команда /rules и /rule"""
     try:
         add_user(message.from_user)
-
-        rules_text = (
-            f"📖 <b>Кто шпион?</b>\n\n"
-            f"🎯 <b>Цель</b>\n"
-            f"• <b>Мирные</b> вычисляют шпиона и выбивают его голосованием\n"
-            f"• <b>Шпион</b> угадывает <b>локацию</b> и должен остаться в игре\n\n"
-            f"🎭 <b>Роли</b>\n"
-            f"• <b>Мирный</b>: знает локацию и ищет шпиона\n"
-            f"• <b>Шпион</b>: локацию не знает, но может угадать её\n\n"
-            f"⏱️ <b>Раунд (повторяется)</b>\n"
-            f"1) <b>Обсуждение</b>: каждый задаёт вопрос <b>следующему</b> в очередности (вопросы про локацию)\n"
-            f"2) <b>Голосование</b>: голосуют в ЛС; больше всего голосов = выбывает\n"
-            f"3) <b>Итоги</b>: выбывший показывает роль\n\n"
-            f"🏆 <b>Победа</b>\n"
-            f"• Мирные: шпионы выбыли\n"
-            f"• Шпионы: живых мирных <= живых шпионов <i>или</i> шпионы угадали локацию нужное число раз\n\n"
-            f"⚠️ <b>Баланс игры</b>\n"
-            f"1→3, 2→5, 3→7, 4→9, 5→11 игроков (минимум под выбранное число шпионов)"
-        )
-
-        keyboard = InlineKeyboardMarkup(row_width=1)
-        keyboard.add(
-            InlineKeyboardButton("📖 Подробные правила", callback_data="rules_detailed"),
-            InlineKeyboardButton("❌ Закрыть", callback_data="close_rules")
-        )
-
-        safe_send_message(message.chat.id, rules_text, reply_markup=keyboard)
-
+        safe_send_message(message.chat.id, get_rules_text())
     except Exception as e:
         logger.error(f"❌ Ошибка /rules: {str(e)}")
 
@@ -1637,31 +1800,13 @@ def callback_rules(call: CallbackQuery):
     try:
         safe_answer_callback(call.id)
 
-        rules_text = (
-            f"📖 <b>Правила игры</b>\n\n"
-            f"🎯 <b>Цель:</b>\n"
-            f"• Мирные вычисляют шпиона\n"
-            f"• Шпион угадывает локацию\n\n"
-            f"🎭 <b>Роли:</b>\n"
-            f"• <b>Мирный</b>: Знает локацию\n"
-            f"• <b>Шпион</b>: Не знает локацию\n\n"
-            f"⏱️ <b>Ход:</b>\n"
-            f"1. Обсуждение\n"
-            f"2. Голосование\n"
-            f"3. Результаты\n\n"
-            f"🏆 <b>Победа:</b>\n"
-            f"• Мирные: все шпионы выбыли\n"
-            f"• Шпионы: угадали локацию"
-        )
-
         keyboard = InlineKeyboardMarkup(row_width=1)
         keyboard.add(
-            InlineKeyboardButton("📖 Подробные правила", callback_data="rules_detailed"),
             InlineKeyboardButton("⬅️ Назад", callback_data="back_to_start")
         )
 
-        if not safe_edit_message(call.message.chat.id, call.message.message_id, rules_text, reply_markup=keyboard):
-            safe_send_message(call.message.chat.id, rules_text, reply_markup=keyboard)
+        if not safe_edit_message(call.message.chat.id, call.message.message_id, get_rules_text(), reply_markup=keyboard):
+            safe_send_message(call.message.chat.id, get_rules_text(), reply_markup=keyboard)
 
     except Exception as e:
         logger.error(f"❌ Ошибка callback_rules: {str(e)}")
@@ -1695,7 +1840,7 @@ def callback_rules_detailed(call: CallbackQuery):
             f"  1→1, 2→1, 3→2, 4→2, 5→3\n\n"
             f"🏆 <b>Победа</b>\n"
             f"• Мирные: шпионы выбыли\n"
-            f"• Шпионы: живых мирных <= живых шпионов <i>или</i> нужное число угаданных локаций"
+            f"• Шпионы: живых мирных ≤ живых шпионов <i>или</i> нужное число угаданных локаций"
         )
 
         keyboard = InlineKeyboardMarkup(row_width=1)
@@ -1730,7 +1875,7 @@ def callback_rules_back(call: CallbackQuery):
             f"3) <b>Итоги</b>: выбывший показывает роль\n\n"
             f"🏆 <b>Победа</b>\n"
             f"• Мирные: шпионы выбыли\n"
-            f"• Шпионы: живых мирных <= живых шпионов <i>или</i> шпионы угадали локацию нужное число раз\n\n"
+            f"• Шпионы: живых мирных ≤ живых шпионов <i>или</i> шпионы угадали локацию нужное число раз\n\n"
             f"⚠️ <b>Баланс игры</b>\n"
             f"1→3, 2→5, 3→7, 4→9, 5→11 игроков (минимум под выбранное число шпионов)"
         )
@@ -2278,24 +2423,6 @@ def callback_start_game(call: CallbackQuery):
             )
             safe_send_message(user_id, msg)
 
-        theme = get_group_theme(chat_id)
-        theme_data = THEMES[theme]
-
-        game_start_msg = (
-            f"{theme_data['game_start']}\n\n"
-            f"🔄 <b>Очередность вопросов:</b>\n"
-        )
-
-        order = all_players.copy()
-        random.shuffle(order)
-
-        for i in range(len(order)):
-            current = order[i]
-            next_p = order[(i + 1) % len(order)]
-            game_start_msg += f"{get_user_profile_link(current)} ➡️ {get_user_profile_link(next_p)}\n"
-
-        safe_send_message(chat_id, game_start_msg)
-
         try:
             bot.unpin_chat_message(chat_id)
         except:
@@ -2564,7 +2691,85 @@ def callback_help(call: CallbackQuery):
     except Exception as e:
         logger.error(f"❌ Ошибка callback_help: {str(e)}")
 
+@bot.callback_query_handler(func=lambda call: call.data.startswith("skipdiscuss_"))
+def callback_skip_discussion(call: CallbackQuery):
+    """Callback — пропустить обсуждение (нужно большинство голосов)"""
+    try:
+        safe_answer_callback(call.id)
+
+        game_id = int(call.data.split("_")[1])
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Проверяем что игра идёт и фаза обсуждения
+        cursor.execute('''SELECT status, chat_id FROM games WHERE game_id = ?''', (game_id,))
+        game_row = cursor.fetchone()
+        if not game_row or game_row['status'] != 'running':
+            conn.close()
+            return
+
+        chat_id = game_row['chat_id']
+
+        cursor.execute('''SELECT current_phase FROM active_sessions WHERE game_id = ?''', (game_id,))
+        session = cursor.fetchone()
+        if not session or session['current_phase'] != 'discussion':
+            safe_answer_callback(call.id, "⚠️ Обсуждение уже завершено!", show_alert=True)
+            conn.close()
+            return
+
+        # Проверяем что пользователь — живой игрок в этой игре
+        cursor.execute('''SELECT alive FROM game_players WHERE game_id = ? AND user_id = ?''',
+            (game_id, call.from_user.id))
+        player = cursor.fetchone()
+        if not player or player['alive'] != 1:
+            safe_answer_callback(call.id, "❌ Только живые игроки могут голосовать за скип!", show_alert=True)
+            conn.close()
+            return
+
+        cursor.execute('''SELECT COUNT(*) as cnt FROM game_players WHERE game_id = ? AND alive = 1''', (game_id,))
+        alive_count = cursor.fetchone()['cnt']
+        conn.close()
+
+        skip_needed = (alive_count // 2) + 1
+
+        # Если уже скипнули — не считаем
+        if discussion_skipped.get(game_id):
+            return
+
+        votes_set = skip_discussion_votes.setdefault(game_id, set())
+
+        if call.from_user.id in votes_set:
+            safe_answer_callback(call.id, "✅ Ты уже проголосовал за пропуск!", show_alert=True)
+            return
+
+        votes_set.add(call.from_user.id)
+        current_votes = len(votes_set)
+
+        safe_send_message(chat_id,
+            f"⏭ {get_user_profile_link(call.from_user.id)} хочет пропустить обсуждение "
+            f"— <b>{current_votes}/{skip_needed}</b>"
+        )
+
+        if current_votes >= skip_needed:
+            discussion_skipped[game_id] = True
+            safe_send_message(chat_id,
+                f"⚡ <b>Обсуждение пропущено!</b>\n"
+                f"Большинство проголосовало за переход к голосованию."
+            )
+            # Запускаем голосование в отдельном потоке чтобы не блокировать callback
+            threading.Thread(target=start_voting_phase, args=(game_id, chat_id), daemon=True).start()
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка callback_skip_discussion: {str(e)}")
+
 # ==================== ИГРОВАЯ ЛОГИКА ====================
+
+def get_skip_discussion_keyboard(game_id: int) -> InlineKeyboardMarkup:
+    """Кнопка пропуска обсуждения"""
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    keyboard.add(InlineKeyboardButton("⏭ Закончить обсуждение", callback_data=f"skipdiscuss_{game_id}"))
+    return keyboard
 
 def start_game_phase(game_id: int, chat_id: int):
     """Запуск фазы обсуждения с очередностью вопросов"""
@@ -2572,7 +2777,7 @@ def start_game_phase(game_id: int, chat_id: int):
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        cursor.execute('''SELECT discussion_time, voting_time, spies_count, location FROM games 
+        cursor.execute('''SELECT discussion_time, voting_time, spies_count, location, round_count FROM games 
             WHERE game_id = ?''', (game_id,))
         game = cursor.fetchone()
 
@@ -2582,16 +2787,18 @@ def start_game_phase(game_id: int, chat_id: int):
 
         discussion_time = game['discussion_time']
         voting_time = game['voting_time']
-        location = game['location']
+        spies_count = game['spies_count']
+        location_hidden = "???"  # локация скрыта от группы
 
         # В очередности должны быть ТОЛЬКО живые игроки
         cursor.execute('''SELECT user_id FROM game_players WHERE game_id = ? AND alive = 1 ORDER BY RANDOM()''', (game_id,))
         all_players = [row['user_id'] for row in cursor.fetchall()]
         if not all_players:
             conn.close()
-            # Если по каким-то причинам никого не осталось живым, корректно завершим/перейдем дальше по правилам
             check_win_conditions(game_id, chat_id)
             return
+
+        player_count = len(all_players)
 
         now = datetime.now()
         discussion_end = now + timedelta(minutes=discussion_time)
@@ -2600,21 +2807,29 @@ def start_game_phase(game_id: int, chat_id: int):
         cursor.execute('''SELECT game_id FROM active_sessions WHERE game_id = ?''', (game_id,))
         existing_session = cursor.fetchone()
 
+        cursor.execute('''SELECT current_round FROM active_sessions WHERE game_id = ?''', (game_id,))
+        round_row = cursor.fetchone()
+        current_round = round_row['current_round'] if round_row else 1
+
         if existing_session:
             cursor.execute('''UPDATE active_sessions 
                 SET current_phase = 'discussion', 
                     discussion_end_time = ?, 
                     voting_end_time = ?
-                WHERE game_id = ?''', 
+                WHERE game_id = ?''',
                 (discussion_end.isoformat(), voting_end.isoformat(), game_id))
         else:
             cursor.execute('''INSERT INTO active_sessions (game_id, chat_id, current_round, current_phase, 
                 discussion_end_time, voting_end_time, created_at) 
-                VALUES (?, ?, 1, 'discussion', ?, ?, ?)''', 
+                VALUES (?, ?, 1, 'discussion', ?, ?, ?)''',
                 (game_id, chat_id, discussion_end.isoformat(), voting_end.isoformat(), now.isoformat()))
 
         conn.commit()
         conn.close()
+
+        # Сброс счётчика скипов для нового раунда
+        skip_discussion_votes[game_id] = set()
+        discussion_skipped[game_id] = False
 
         theme = get_group_theme(chat_id)
         theme_data = THEMES[theme]
@@ -2622,28 +2837,32 @@ def start_game_phase(game_id: int, chat_id: int):
         order = all_players.copy()
         random.shuffle(order)
 
-        order_text = ""
+        order_lines = []
         for i in range(len(order)):
             current = order[i]
             next_p = order[(i + 1) % len(order)]
-            order_text += f"{get_user_profile_link(current)} ➡️ {get_user_profile_link(next_p)}\n"
+            order_lines.append(f"  {get_user_profile_link(current)} ➜ {get_user_profile_link(next_p)}")
+        order_text = "\n".join(order_lines)
+
+        # Сколько голосов нужно для скипа — большинство живых игроков
+        skip_needed = (player_count // 2) + 1
 
         discussion_msg = (
-            f"{theme_data['emoji']} <b>Начинается обсуждение!</b>\n\n"
-            f"⏱️ <b>Время:</b> {format_time(discussion_time)}\n"
-            f"🎯 <b>Локация:</b> {location}\n\n"
-            f"🔄 <b>Очередность вопросов:</b>\n"
+            f"{theme_data['emoji']} <b>Раунд {current_round} — Обсуждение</b>\n"
+            f"┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n"
+            f"⏱ Время обсуждения: <b>{format_time(discussion_time)}</b>\n"
+            f"🗳 Время голосования: <b>{format_time(voting_time)}</b>\n"
+            f"🕵️ Шпионов в игре: <b>{spies_count}</b>\n"
+            f"👥 Игроков живо: <b>{player_count}</b>\n"
+            f"┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n"
+            f"🔄 <b>Очерёдность вопросов:</b>\n"
             f"{order_text}\n"
-            f"💬 <b>Обсуждайте и вычисляйте шпиона!</b>\n\n"
-            f"📝 <b>Как это работает:</b>\n"
-            f"• Каждый игрок задает вопрос СЛЕДУЮЩЕМУ в очередности\n"
-            f"• Вопросы должны быть про локацию\n"
-            f"• Все видят очередность\n"
-            f"• Пишите в группе свободно\n"
-            f"• За 1 минуту до конца - предупреждение"
+            f"┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n"
+            f"💬 Каждый задаёт вопрос <b>следующему</b> по очереди\n"
+            f"⏭ Нашли шпиона? <b>{skip_needed} из {player_count}</b> могут пропустить обсуждение"
         )
 
-        safe_send_message(chat_id, discussion_msg)
+        safe_send_message(chat_id, discussion_msg, reply_markup=get_skip_discussion_keyboard(game_id))
 
         threading.Thread(target=discussion_timer, args=(game_id, chat_id, discussion_time), daemon=True).start()
 
@@ -2659,6 +2878,10 @@ def discussion_timer(game_id: int, chat_id: int, duration: int):
         warning_sent = False
 
         while time.time() - start_time < duration * 60:
+            # Если большинство проголосовало за скип — выходим из цикла
+            if discussion_skipped.get(game_id):
+                return
+
             elapsed = time.time() - start_time
             remaining = duration * 60 - elapsed
 
@@ -2669,7 +2892,20 @@ def discussion_timer(game_id: int, chat_id: int, duration: int):
 
             time.sleep(1)
 
-        start_voting_phase(game_id, chat_id)
+        # Если не было принудительного скипа — чистим и переходим к голосованию
+        if not discussion_skipped.get(game_id):
+            # Проверяем что игра ещё идёт (могла завершиться пока шёл таймер)
+            try:
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute('SELECT status FROM games WHERE game_id = ?', (game_id,))
+                row = cursor.fetchone()
+                conn.close()
+                if not row or row['status'] != 'running':
+                    return
+            except Exception:
+                pass
+            start_voting_phase(game_id, chat_id)
 
     except Exception as e:
         logger.error(f"❌ Ошибка discussion_timer: {str(e)}")
@@ -2747,6 +2983,17 @@ def voting_timer(game_id: int, chat_id: int, duration: int):
 
             time.sleep(1)
 
+        # Проверяем что игра ещё идёт (могла завершиться пока шёл таймер)
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute('SELECT status FROM games WHERE game_id = ?', (game_id,))
+            row = cursor.fetchone()
+            conn.close()
+            if not row or row['status'] != 'running':
+                return
+        except Exception:
+            pass
         process_voting_results(game_id, chat_id)
 
     except Exception as e:
@@ -2786,6 +3033,14 @@ def process_voting_results(game_id: int, chat_id: int):
         candidates = [row['voted_for_id'] for row in votes if row['vote_count'] == max_votes]
 
         if len(candidates) > 1:
+            # Ничья — сообщаем об этом отдельным сообщением
+            tie_names = " и ".join(get_user_profile_link(uid) for uid in candidates)
+            safe_send_message(chat_id,
+                f"⚖️ <b>Ничья!</b>\n\n"
+                f"За {tie_names} — поровну голосов.\n"
+                f"Выбираю случайного..."
+            )
+            time.sleep(2)
             eliminated_id = random.choice(candidates)
         else:
             eliminated_id = candidates[0]
@@ -2802,15 +3057,18 @@ def process_voting_results(game_id: int, chat_id: int):
         theme = get_group_theme(chat_id)
         theme_data = THEMES[theme]
 
-        role_text = "🕵️‍♂️ <b>Шпион!</b>" if role == ROLE_SPY else "👥 <b>Мирный житель!</b>"
+        role_text = (
+            f"<b>{t(chat_id, 'role_spy')}</b>"
+            if role == ROLE_SPY else
+            f"<b>{t(chat_id, 'role_civilian')}</b>"
+        )
         result_msg = (
-            f"🗳️ <b>Результаты голосования:</b>\n\n"
-            f"Наибольшее количество голосов получил:\n"
-            f"{get_user_profile_link(eliminated_id)}\n\n"
-            f"Роль: {role_text}"
+            f"🚪 <b>{get_user_profile_link(eliminated_id)}</b> выбывает из игры\n\n"
+            f"▸ Роль: {role_text}"
         )
 
         safe_send_message(chat_id, result_msg)
+        conn.close()
 
         check_win_conditions(game_id, chat_id)
 
@@ -2855,12 +3113,12 @@ def check_win_conditions(game_id: int, chat_id: int):
         elif alive_civilians <= alive_spies:
             winner = 'spies'
 
+        conn.close()
+
         if winner:
             end_game(game_id, chat_id, winner)
         else:
             start_next_round(game_id, chat_id)
-
-        conn.close()
 
     except Exception as e:
         logger.error(f"❌ Ошибка check_win_conditions: {str(e)}")
@@ -2952,28 +3210,60 @@ def end_game(game_id: int, chat_id: int, winner: str):
         theme = get_group_theme(chat_id)
         theme_data = THEMES[theme]
 
-        if winner == 'spies':
-            winner_text = "🕵️‍♂️ <b>Победили шпионы!</b>"
-        else:
-            winner_text = "👥 <b>Победили мирные жители!</b>"
+        alive_spies = [p['user_id'] for p in players if p['role'] == ROLE_SPY      and p['alive'] == 1]
+        dead_spies  = [p['user_id'] for p in players if p['role'] == ROLE_SPY      and p['alive'] == 0]
+        alive_civs  = [p['user_id'] for p in players if p['role'] == ROLE_CIVILIAN and p['alive'] == 1]
+        dead_civs   = [p['user_id'] for p in players if p['role'] == ROLE_CIVILIAN and p['alive'] == 0]
 
-        end_msg = (
-            f"{theme_data['emoji']} <b>Игра завершена!</b>\n\n"
-            f"{winner_text}\n\n"
-            f"🎯 <b>Локация:</b> {location}\n"
-            f"⏱️ <b>Длительность:</b> {game_duration} минут\n\n"
-            f"👥 <b>Мирные жители:</b>\n"
-            f"{', '.join([get_user_profile_link(c) for c in civilians]) or 'Нет'}\n\n"
-            f"🕵️‍♂️ <b>Шпионы:</b>\n"
-            f"{', '.join([get_user_profile_link(s) for s in spies]) or 'Нет'}"
+        def fmt_player(uid, alive=True):
+            link = get_user_profile_link(uid)
+            return f"  {'✦' if alive else '✘'} {'<s>' + link + '</s>' if not alive else link}"
+
+        def fmt_section(alive_list, dead_list):
+            lines = [fmt_player(u, True) for u in alive_list]
+            if dead_list:
+                lines += [fmt_player(u, False) for u in dead_list]
+            return "\n".join(lines) if lines else "  —"
+
+        duration_text = (
+            f"{game_duration} {t(chat_id, 'duration_min')}"
+            if game_duration > 0 else t(chat_id, 'duration_less')
         )
 
         if winner == 'spies':
-            end_msg += (
-                "\n\n"
-                f"🎯 <b>Угадали локацию (живы):</b>\n"
-                f"{', '.join([get_user_profile_link(s) for s in spies_guessed_alive]) or 'Нет'}"
+            win_header = t(chat_id, 'spies_win_header')
+            win_reason = (
+                t(chat_id, 'spies_win_reason_guess')
+                if spies_guessed_alive else
+                t(chat_id, 'spies_win_reason_num')
             )
+            win_banner = "🔴"
+        else:
+            win_header = t(chat_id, 'civs_win_header')
+            win_reason = t(chat_id, 'civs_win_reason')
+            win_banner = "🟢"
+
+        spies_title = (
+            t(chat_id, 'spies_label_plural') if len(spies) > 1
+            else t(chat_id, 'spies_label')
+        )
+
+        end_msg = (
+            f"{win_banner} <b>{win_header}</b>\n"
+            f"<i>{win_reason}</i>\n"
+            f"┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n"
+            f"{t(chat_id, 'location_label')}: <b>{location}</b>\n"
+            f"{t(chat_id, 'duration_label')}: <b>{duration_text}</b>\n"
+            f"┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n"
+            f"<b>{spies_title}</b>\n"
+            f"{fmt_section(alive_spies, dead_spies)}\n\n"
+            f"<b>{t(chat_id, 'civs_label')}</b>\n"
+            f"{fmt_section(alive_civs, dead_civs)}"
+        )
+
+        if winner == 'spies' and spies_guessed_alive:
+            guessed_names = ", ".join(get_user_profile_link(u) for u in spies_guessed_alive)
+            end_msg += f"\n┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n{t(chat_id, 'guessed_label')}: {guessed_names}"
 
         safe_send_message(chat_id, end_msg)
 
@@ -2988,6 +3278,78 @@ def end_game(game_id: int, chat_id: int, winner: str):
 
     except Exception as e:
         logger.error(f"❌ Ошибка end_game: {str(e)}")
+
+# ==================== ЯЗЫК ====================
+
+def get_language_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура выбора языка"""
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        InlineKeyboardButton("🇷🇺 Русский",     callback_data="setlang_ru"),
+        InlineKeyboardButton("🇬🇧 English",      callback_data="setlang_en"),
+        InlineKeyboardButton("🇺🇦 Українська",   callback_data="setlang_uk"),
+    )
+    return keyboard
+
+@bot.message_handler(commands=['language'])
+def handle_language(message: Message):
+    """Команда /language — выбор языка группы"""
+    try:
+        if message.chat.type not in ['group', 'supergroup']:
+            safe_send_message(message.chat.id, t(message.chat.id, 'lang_only_group'))
+            return
+
+        # Только администраторы группы могут менять язык
+        try:
+            member = bot.get_chat_member(message.chat.id, message.from_user.id)
+            is_admin = member.status in ('administrator', 'creator')
+        except Exception:
+            is_admin = False
+
+        if not is_admin and message.from_user.id != ADMIN_ID:
+            safe_send_message(message.chat.id, t(message.chat.id, 'lang_no_rights'))
+            return
+
+        safe_send_message(message.chat.id, t(message.chat.id, 'lang_choose'), reply_markup=get_language_keyboard())
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка /language: {str(e)}")
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("setlang_"))
+def callback_setlang(call: CallbackQuery):
+    """Callback смена языка"""
+    try:
+        safe_answer_callback(call.id)
+
+        if call.message.chat.type not in ['group', 'supergroup']:
+            safe_send_message(call.message.chat.id, t(call.message.chat.id, 'lang_only_group'))
+            return
+
+        try:
+            member = bot.get_chat_member(call.message.chat.id, call.from_user.id)
+            is_admin = member.status in ('administrator', 'creator')
+        except Exception:
+            is_admin = False
+
+        if not is_admin and call.from_user.id != ADMIN_ID:
+            safe_send_message(call.message.chat.id, t(call.message.chat.id, 'lang_no_rights'))
+            return
+
+        lang = call.data.split("_")[1]
+        if lang not in SUPPORTED_LANGUAGES:
+            return
+
+        set_group_language(call.message.chat.id, lang)
+
+        # Получаем строку подтверждения уже на новом языке
+        confirmation = TRANSLATIONS[lang]['lang_set']
+        try:
+            bot.edit_message_text(confirmation, call.message.chat.id, call.message.message_id)
+        except Exception:
+            safe_send_message(call.message.chat.id, confirmation)
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка callback_setlang: {str(e)}")
 
 # ==================== АДМИН КОМАНДЫ ====================
 
